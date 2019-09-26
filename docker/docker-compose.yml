@@ -1,0 +1,94 @@
+version: '3.3'
+services:
+  workspace:
+    container_name: workspace
+    build: ./workspace
+    restart: always
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./../src:/www
+    working_dir: /www
+    command: /bin/bash
+    depends_on:
+      - mysql
+    networks:
+      - phpdock
+
+  nginx:
+    container_name: nginx
+    build: ./nginx
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+      - 9001:9001
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd
+      - /var/logs/nginx:/var/logs/nginx
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+      - ./../src:/www
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    depends_on:
+      - php-fpm
+    networks:
+      - phpdock
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    restart: always
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  php-fpm:
+    image: 'bitnami/php-fpm'
+    container_name: php-fpm
+    volumes:
+      - ./../src:/www
+      - ./php-fpm/conf.d/app.ini:/opt/bitnami/php/etc/conf.d/app.ini
+    restart: always
+    networks:
+      - phpdock
+
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_DATABASE: 'phpdock'
+      MYSQL_ROOT_PASSWORD: 'root'
+    ports:
+      - 3306:3306
+    expose:
+      - 3306
+    volumes:
+      - ~/.phpdock/mysql:/var/lib/mysql
+      - ./mysql/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - /var/logs/mysql:/var/logs/mysql
+    networks:
+      - phpdock
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    environment:
+      - PMA_ARBITRARY=1
+    restart: always
+    ports:
+      - 9000:80
+    volumes:
+      - /sessions
+    networks:
+      - phpdock
+
+networks:
+  phpdock:
+
+volumes:
+  workspace:
